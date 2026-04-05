@@ -132,11 +132,14 @@ def load_covid_config() -> ExperimentConfig:
         target_wide=target_wide,
         feature_wides=feature_wides,
         valid_states=valid_states,
-        # covid_
+        feature_lags=(0, 2, 4, 6),
+        ar_lags=(1, 3, 5, 7),
+        # covid__
         # feature_lags=(1, 2, 3, 4),
-        # covid
-        feature_lags=(0, 1, 2, 3),
-        ar_lags=(1, 2, 3, 4),
+        # ar_lags=(2, 3, 4, 5),
+        # covid_
+        # feature_lags=(0, 1, 2, 3),
+        # ar_lags=(1, 2, 3, 4),
         baseline_gammas=[0.0, 0.01, 0.05, 0.1],
         k_candidates=3,
         s_screen=50,
@@ -341,12 +344,14 @@ def load_ili_config() -> ExperimentConfig:
         target_wide=target_wide,
         feature_wides=feature_wides,
         valid_states=valid_states,
-        # ili_
-        # feature_lags=(1, 2, 3, 4),
-        # ar_lags=(3, 4, 5, 6),
-        # ili
         feature_lags=(0, 1, 2, 3),
-        ar_lags=(2, 3, 4, 5),
+        ar_lags=(1, 2, 3, 4),
+        # ili__
+        # feature_lags=(1, 2, 3, 4),
+        # ar_lags=(2, 3, 4, 5),
+        # ili_
+        # feature_lags=(0, 1, 2, 3),
+        # ar_lags=(2, 3, 4, 5),
         baseline_gammas=[0.0, 0.01, 0.05, 0.1],
         k_candidates=3,
         s_screen=50,
