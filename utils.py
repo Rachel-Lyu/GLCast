@@ -9,6 +9,7 @@ except Exception:  # pragma: no cover - optional dependency
     celer = None
 import numpy as np
 import pandas as pd
+from sklearn.linear_model import Lasso
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 
 
@@ -402,7 +403,7 @@ def SIS_grpLasso_KKT(
     if len(violated_g) == 0:
         coef = recover_coefficients(coef_unit_full, X_std, y_std)
         intercept = float(y_mean)
-        return np.array([], dtype=int), coef, intercept
+        return np.array([], dtype=int), coef, intercept, coef_unit_full.copy()
 
     active_g = np.array([], dtype=int)
     it = 0
@@ -424,7 +425,7 @@ def SIS_grpLasso_KKT(
     intercept = recover_intercept(X_expanded, y, coef, X_mean=X_mean, y_mean=y_mean)
     active_v = np.where(coef != 0)[0]
     active_g_final = shrink_indices(active_v, group_size)
-    return active_g_final, coef, intercept
+    return active_g_final, coef, intercept, coef_unit_full.copy()
 
 
 # -----------------------------------------------------------------------------
@@ -502,6 +503,7 @@ def _signal_name_from_feature(feature_name: str) -> str:
 
 def _extract_selection_rows(
     coef: np.ndarray,
+    coef_raw: np.ndarray,
     feat_names: Sequence[str],
     dataset_name: str,
     target_name: str,
@@ -511,12 +513,14 @@ def _extract_selection_rows(
     coef_tol: float,
 ) -> Tuple[List[dict], List[dict]]:
     coef_series = pd.Series(np.asarray(coef, dtype=float), index=list(feat_names))
+    coef_raw_series = pd.Series(np.asarray(coef_raw, dtype=float), index=list(feat_names))
     nz = coef_series[np.abs(coef_series) > coef_tol].sort_values(key=np.abs, ascending=False)
 
     feature_rows: List[dict] = []
     signal_rows: List[dict] = []
 
     for rank_idx, (feature_name, value) in enumerate(nz.items(), start=1):
+        raw_value = float(coef_raw_series.loc[feature_name])
         signal_name = _signal_name_from_feature(feature_name)
         feature_rows.append(
             {
@@ -530,6 +534,8 @@ def _extract_selection_rows(
                 "is_auxiliary": signal_name != "AR",
                 "coef": float(value),
                 "abs_coef": float(abs(value)),
+                "coef_raw": raw_value,
+                "abs_coef_raw": float(abs(raw_value)),
                 "sign": _sign_label(float(value), tol=coef_tol),
                 "rank_abs_within_model": rank_idx,
             }
@@ -544,6 +550,8 @@ def _extract_selection_rows(
         .agg(
             coef_sum=("coef", "sum"),
             abs_coef_sum=("abs_coef", "sum"),
+            coef_raw_sum=("coef_raw", "sum"),
+            abs_coef_raw_sum=("abs_coef_raw", "sum"),
             n_selected_features=("feature_name", "count"),
         )
         .sort_values("abs_coef_sum", ascending=False)
@@ -564,6 +572,8 @@ def _extract_selection_rows(
                 "is_auxiliary": bool(row["is_auxiliary"]),
                 "coef_sum": float(row["coef_sum"]),
                 "abs_coef_sum": float(row["abs_coef_sum"]),
+                "coef_raw_sum": float(row["coef_raw_sum"]),
+                "abs_coef_raw_sum": float(row["abs_coef_raw_sum"]),
                 "sign": row["sign"],
                 "n_selected_features": int(row["n_selected_features"]),
                 "rank_abs_within_model": int(row["rank_abs_within_model"]),
@@ -766,7 +776,7 @@ def run_walkforward_training(
                 )
                 baseline_by_state[st] = {"gamma": best_gamma}
 
-                active_g, coef, intercept = SIS_grpLasso_KKT(
+                active_g, coef, intercept, coef_raw = SIS_grpLasso_KKT(
                     X_expanded=X_tr,
                     y=y_tr,
                     group_size=group_size,
@@ -782,6 +792,7 @@ def run_walkforward_training(
 
                 feat_rows, sig_rows = _extract_selection_rows(
                     coef=coef,
+                    coef_raw=coef_raw,
                     feat_names=feat_names,
                     dataset_name=config.dataset_name,
                     target_name=config.target_name,
@@ -1011,6 +1022,7 @@ def run_walkforward_training(
             "test_window": int(config.test_window),
             "val_window": int(config.val_window),
             "train_window": int(config.train_window),
+            "forecast_horizon": int(config.forecast_horizon),
         }
         with open(os.path.join(alpha_dir, "run_metadata.json"), "w", encoding="utf-8") as f:
             json.dump(metadata, f, indent=2)
