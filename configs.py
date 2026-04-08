@@ -26,6 +26,7 @@ class ExperimentConfig:
     test_window: int
     val_window: int
     train_window: int
+    forecast_horizon: int
 
 
 def _basename_no_ext(path: str) -> str:
@@ -74,6 +75,20 @@ def _infer_states(target_wide: pd.DataFrame, valid_states: Optional[Iterable[str
     return set(states)
 
 
+def _shift_target_for_horizon(
+    target_wide: pd.DataFrame,
+    horizon: int,
+) -> pd.DataFrame:
+    """Shift target so each row at time t maps to y(t + horizon)."""
+    horizon = int(horizon)
+    if horizon < 0:
+        raise ValueError("forecast_horizon must be >= 0.")
+    if horizon == 0:
+        return target_wide
+    shifted = target_wide.shift(-horizon)
+    return shifted.dropna(how="all")
+
+
 # -----------------------------------------------------------------------------
 # COVID dataset
 # -----------------------------------------------------------------------------
@@ -111,7 +126,7 @@ def _read_covid_signal_csv(path: str) -> pd.DataFrame:
 
 
 
-def load_covid_config() -> ExperimentConfig:
+def load_covid_config(forecast_horizon: int = 0) -> ExperimentConfig:
     signal_wides: Dict[str, pd.DataFrame] = {}
     for fp in [COVID_TARGET_FILE] + COVID_AUX_FILES:
         name = _basename_no_ext(fp)
@@ -120,7 +135,8 @@ def load_covid_config() -> ExperimentConfig:
         signal_wides[name] = _read_covid_signal_csv(fp)
 
     target_name = _basename_no_ext(COVID_TARGET_FILE)
-    target_wide = signal_wides[target_name].iloc[92:].sort_index()
+    raw_target_wide = signal_wides[target_name].iloc[92:].sort_index()
+    target_wide = _shift_target_for_horizon(raw_target_wide, forecast_horizon)
 
     all_signal_wides = {_basename_no_ext(fp): signal_wides[_basename_no_ext(fp)] for fp in COVID_AUX_FILES}
     feature_wides = _align_features_to_target(target_wide, all_signal_wides)
@@ -149,6 +165,7 @@ def load_covid_config() -> ExperimentConfig:
         test_window=30,
         val_window=30,
         train_window=180,
+        forecast_horizon=forecast_horizon,
     )
 
 
@@ -309,7 +326,7 @@ def _read_weekly_excel_sheets(
 
 
 
-def load_ili_config() -> ExperimentConfig:
+def load_ili_config(forecast_horizon: int = 0) -> ExperimentConfig:
     fan_skip = np.append(np.repeat(11, 8), np.repeat(3, 6))
     if_skip = np.repeat(3, len(pd.ExcelFile(ILI_IF_FILE).sheet_names))
 
@@ -333,7 +350,8 @@ def load_ili_config() -> ExperimentConfig:
     valid_dfs["ili"] = flu_pivot
 
     target_name = "ili"
-    target_wide = valid_dfs[target_name].sort_index()
+    raw_target_wide = valid_dfs[target_name].sort_index()
+    target_wide = _shift_target_for_horizon(raw_target_wide, forecast_horizon)
     all_signal_wides = {name: valid_dfs[name] for name in ILI_SIGNAL_NAMES}
     feature_wides = _align_features_to_target(target_wide, all_signal_wides)
     valid_states = _infer_states(target_wide, ILI_VALID_STATES)
@@ -361,16 +379,17 @@ def load_ili_config() -> ExperimentConfig:
         test_window=4,
         val_window=4,
         train_window=55,
+        forecast_horizon=forecast_horizon,
     )
 
 
 # -----------------------------------------------------------------------------
 # Public entry point
 # -----------------------------------------------------------------------------
-def get_experiment_config(dataset_name: str) -> ExperimentConfig:
+def get_experiment_config(dataset_name: str, forecast_horizon: int) -> ExperimentConfig:
     dataset_name = dataset_name.lower().strip()
     if dataset_name == "covid":
-        return load_covid_config()
+        return load_covid_config(forecast_horizon=forecast_horizon)
     if dataset_name == "ili":
-        return load_ili_config()
+        return load_ili_config(forecast_horizon=forecast_horizon)
     raise ValueError(f"Unknown dataset '{dataset_name}'. Choose from ['covid', 'ili'].")
